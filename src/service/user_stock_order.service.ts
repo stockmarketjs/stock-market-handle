@@ -10,6 +10,9 @@ import { UserStockOrderFindAllVo } from '../vo/user_stock_order.vo';
 import { ConstProvider } from '../constant/provider.const';
 import { Sequelize } from 'sequelize-typescript';
 import { StockService } from './stock.service';
+import { UserStockService } from './user_stock.service';
+import { UserCapitalService } from './user_capital.service';
+import { UserStockOrder } from '../entity/sequelize/user_stock_order.entity';
 
 @Injectable()
 export class UserStockOrderService extends BaseService {
@@ -20,6 +23,8 @@ export class UserStockOrderService extends BaseService {
         private readonly stockDao: StockDao,
         @Inject(forwardRef(() => StockService))
         private readonly stockService: StockService,
+        private readonly userStockService: UserStockService,
+        private readonly userCapitalService: UserCapitalService,
     ) {
         super();
     }
@@ -28,6 +33,9 @@ export class UserStockOrderService extends BaseService {
         params: UserStockOrderCreateBodyDto,
         transaction?: Transaction,
     ) {
+        Object.assign(params, {
+            tradeHand: params.hand,
+        });
         return this.userStockOrderDao.create(params, { transaction });
     }
 
@@ -86,6 +94,21 @@ export class UserStockOrderService extends BaseService {
             });
     }
 
+    public async updateTradeHandById(
+        id: string,
+        hand: number,
+        transaction?: Transaction,
+    ) {
+        return this.userStockOrderDao.update({
+            hand,
+        }, {
+                where: {
+                    id,
+                },
+                transaction,
+            });
+    }
+
     public async bulkUpdateByIds(
         ids: string[],
         params: UserStockOrderUpdateBodyDto,
@@ -93,6 +116,23 @@ export class UserStockOrderService extends BaseService {
     ) {
         return this.userStockOrderDao.bulkUpdate({
             state: params.state,
+        }, {
+                where: {
+                    id: {
+                        [Op.in]: ids,
+                    },
+                },
+                transaction,
+            });
+    }
+
+    public async bulkUpdateTradeHandByIds(
+        ids: string[],
+        hand: number,
+        transaction?: Transaction,
+    ) {
+        return this.userStockOrderDao.bulkUpdate({
+            hand,
         }, {
                 where: {
                     id: {
@@ -130,12 +170,45 @@ export class UserStockOrderService extends BaseService {
                     },
                     transaction,
                 });
+            await this.cancelFrozen(
+                userStockOrder,
+                userStockOrder.userId,
+                userStockOrder.hand * 100,
+                userStockOrder.stockId,
+                transaction,
+            );
 
             newTransaction && await transaction.commit();
             return true;
         } catch (e) {
             newTransaction && await transaction.rollback();
             throw e;
+        }
+    }
+
+    private async cancelFrozen(
+        userStockOrder: UserStockOrder,
+        userId: string,
+        value: number,
+        stockId: string,
+        transaction: Transaction,
+    ) {
+        if (userStockOrder.type === ConstData.TRADE_ACTION.BUY) {
+            await this.userCapitalService.findOneByPkLock(userId, transaction);
+            await this.userCapitalService.unfrozenUserCapitalWhenCost(
+                userId,
+                value,
+                transaction,
+            );
+        }
+        if (userStockOrder.type === ConstData.TRADE_ACTION.SOLD) {
+            await this.userStockService.findOneByPkLock(userId, stockId, transaction);
+            await this.userStockService.unfrozenUserStockWhenCost(
+                userId,
+                stockId,
+                value,
+                transaction,
+            );
         }
     }
 
@@ -165,6 +238,15 @@ export class UserStockOrderService extends BaseService {
                     },
                     transaction,
                 });
+            for (const userStockOrder of userStockOrders) {
+                await this.cancelFrozen(
+                    userStockOrder,
+                    userStockOrder.userId,
+                    userStockOrder.hand * 100,
+                    userStockOrder.stockId,
+                    transaction,
+                );
+            }
 
             newTransaction && await transaction.commit();
             return true;

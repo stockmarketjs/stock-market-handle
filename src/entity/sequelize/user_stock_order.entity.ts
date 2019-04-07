@@ -77,4 +77,11 @@ export class UserStockOrder extends Model<UserStockOrder> {
         allowNull: false,
     })
     hand: number;
+
+    @ApiModelProperty({ description: '交易用手数' })
+    @Column({
+        type: DataType.BIGINT,
+        allowNull: false,
+    })
+    tradeHand: number;
 }

@@ -77,6 +77,10 @@ export class OrderService {
                     continue;
                 }
 
+                console.time('处理部分成交的记录');
+                await this.updateOrderTradeHand(finalOrders, newTransaction);
+                console.timeEnd('处理部分成交的记录');
+
                 console.time('交割');
                 const trade = await this.trade(finalOrders, newTransaction);
                 console.timeEnd('交割');
@@ -103,6 +107,50 @@ export class OrderService {
                 await newTransaction.rollback();
                 throw e;
             }
+        }
+    }
+
+    private async updateOrderTradeHand(
+        orders: {
+            partTradeOrders: {
+                id: string,
+                hand: number,
+            }[],
+        }[],
+        transaction: Transaction,
+    ) {
+        const tasks: {
+            id: string,
+            hand: number,
+        }[] = [];
+        const all = _.reduce(orders, (sum, item) => {
+            sum = sum.concat(item.partTradeOrders);
+            return sum;
+        }, [] as {
+            id: string,
+            hand: number,
+        }[]);
+        const groupAll = _.groupBy(all, 'id');
+        for (const id in groupAll) {
+            const sortItem = _.sortBy(groupAll[id], 'hand');
+            const item = _.first(sortItem);
+            if (item) tasks.push(item);
+        }
+
+        const tasks0 = _.filter(tasks, { hand: 0 });
+        const tasksNot0 = _.reject(tasks, { hand: 0 });
+
+        await this.userStockOrderService.bulkUpdateTradeHandByIds(
+            _.map(tasks0, 'id'),
+            0,
+            transaction,
+        );
+        for (const task of tasksNot0) {
+            await this.userStockOrderService.updateTradeHandById(
+                task.id,
+                task.hand,
+                transaction,
+            );
         }
     }
 
@@ -133,14 +181,30 @@ export class OrderService {
      * @memberof OrderService
      */
     private async trade(
-        finalOrders: {
+        all: {
+            finalOrder: {
+                buyOrder: UserStockOrder,
+                soldOrder: UserStockOrder,
+                price: number,
+                hand: number,
+            },
+            partTradeOrders: {
+                id: string,
+                hand: number,
+            }[],
+        }[],
+        transaction: Transaction,
+    ) {
+        const finalOrders = _.reduce(all, (sum, item) => {
+            sum = sum.concat(item.finalOrder);
+            return sum;
+        }, [] as {
             buyOrder: UserStockOrder,
             soldOrder: UserStockOrder,
             price: number,
             hand: number,
-        }[],
-        transaction: Transaction,
-    ) {
+        }[]);
+
         // 锁用户股票账户, 防止重复锁
         const lockUserStocks: { stockId: string, userId: string }[] = [];
         for (const finalOrder of finalOrders) {
@@ -258,16 +322,28 @@ export class OrderService {
     private calcAllStockFinalOrders(
         readyPool: UserStockOrder[],
     ): {
-        buyOrder: UserStockOrder,
-        soldOrder: UserStockOrder,
-        price: number,
-        hand: number,
-    }[] {
-        const finalOrders: {
+        finalOrder: {
             buyOrder: UserStockOrder,
             soldOrder: UserStockOrder,
             price: number,
             hand: number,
+        },
+        partTradeOrders: {
+            id: string,
+            hand: number,
+        }[],
+    }[] {
+        const finalOrders: {
+            finalOrder: {
+                buyOrder: UserStockOrder,
+                soldOrder: UserStockOrder,
+                price: number,
+                hand: number,
+            },
+            partTradeOrders: {
+                id: string,
+                hand: number,
+            }[],
         }[] = [];
 
         // 获取限价池
@@ -276,7 +352,8 @@ export class OrderService {
         const orders = _.orderBy(limitReadyPools, 'createdAt', 'desc');
         for (const order of orders) {
             const finalOrder = this.matchTrade(readyPool, order);
-            if (finalOrder != null) finalOrders.push(finalOrder);
+            if (!finalOrder) continue;
+            finalOrders.push(finalOrder);
         }
         return finalOrders;
     }
@@ -293,10 +370,16 @@ export class OrderService {
         readyPool: UserStockOrder[],
         currentOrder: UserStockOrder,
     ): {
-        buyOrder: UserStockOrder,
-        soldOrder: UserStockOrder,
-        price: number,
-        hand: number,
+        finalOrder: {
+            buyOrder: UserStockOrder,
+            soldOrder: UserStockOrder,
+            price: number,
+            hand: number,
+        },
+        partTradeOrders: {
+            id: string,
+            hand: number,
+        }[],
     } | null {
         // 获取限价买单池 较高价格优先 时间优先
         const buyOrders = _(readyPool).filter({ type: ConstData.TRADE_ACTION.BUY })
@@ -325,7 +408,19 @@ export class OrderService {
                     ].indexOf(pool.id) >= 0;
                 });
                 // 执行交易
-                return _.assign(finalOrder, { hand: finalOrder.buyOrder.hand });
+                return {
+                    finalOrder: _.assign(finalOrder, { hand: finalOrder.buyOrder.hand }),
+                    partTradeOrders: [
+                        {
+                            id: finalOrder.buyOrder.id,
+                            hand: 0,
+                        },
+                        {
+                            id: finalOrder.soldOrder.id,
+                            hand: 0,
+                        },
+                    ],
+                };
             } else if (finalOrder.buyOrder.hand > finalOrder.soldOrder.hand) {
                 // 移除已经完全成交订单
                 _.remove(readyPool, pool => {
@@ -335,12 +430,26 @@ export class OrderService {
                 const source = _.cloneDeep(finalOrder);
                 source.buyOrder.hand = finalOrder.soldOrder.hand;
                 // 扣减部分成交的手数
-                const a = _.find(readyPool, pool => {
+                const readyPoolItem = _.find(readyPool, pool => {
                     return pool.id === finalOrder.buyOrder.id;
                 });
-                if (a) a.hand -= finalOrder.soldOrder.hand;
+                if (readyPoolItem) readyPoolItem.hand -= finalOrder.soldOrder.hand;
+                const partTradeOrders: {
+                    id: string,
+                    hand: number,
+                }[] = [{
+                    id: finalOrder.soldOrder.id,
+                    hand: 0,
+                }];
+                if (readyPoolItem) partTradeOrders.push({
+                    id: readyPoolItem.id,
+                    hand: readyPoolItem.hand,
+                });
                 // 执行交易
-                return _.assign(source, { hand: finalOrder.soldOrder.hand });
+                return {
+                    finalOrder: _.assign(source, { hand: finalOrder.soldOrder.hand }),
+                    partTradeOrders,
+                };
             } else if (finalOrder.buyOrder.hand < finalOrder.soldOrder.hand) {
                 // 移除已经完全成交订单
                 _.remove(readyPool, pool => {
@@ -350,12 +459,26 @@ export class OrderService {
                 const source = _.cloneDeep(finalOrder);
                 source.soldOrder.hand = finalOrder.buyOrder.hand;
                 // 扣减部分成交的手数
-                const a = _.find(readyPool, pool => {
+                const readyPoolItem = _.find(readyPool, pool => {
                     return pool.id === finalOrder.soldOrder.id;
                 });
-                if (a) a.hand -= finalOrder.buyOrder.hand;
+                if (readyPoolItem) readyPoolItem.hand -= finalOrder.buyOrder.hand;
+                const partTradeOrders: {
+                    id: string,
+                    hand: number,
+                }[] = [{
+                    id: finalOrder.buyOrder.id,
+                    hand: 0,
+                }];
+                if (readyPoolItem) partTradeOrders.push({
+                    id: readyPoolItem.id,
+                    hand: readyPoolItem.hand,
+                });
                 // 执行交易
-                return _.assign(source, { hand: finalOrder.buyOrder.hand });
+                return {
+                    finalOrder: _.assign(source, { hand: finalOrder.buyOrder.hand }),
+                    partTradeOrders,
+                };
             } else {
                 throw Error('计算买卖手数出现问题');
             }
