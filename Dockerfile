@@ -7,7 +7,7 @@ COPY package.json .
 COPY package-lock.json .
 COPY tsconfig.json .
 COPY tsconfig.build.json .
-RUN npm install
+RUN npm install --registry=https://registry.npm.taobao.org
 RUN npm run build
 
 FROM keymetrics/pm2:8-alpine
