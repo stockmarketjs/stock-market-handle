@@ -40,11 +40,15 @@ async function bootstrap() {
     const beginHm = Moment(begin).format('HHmm');
     const endHm = Moment(end).format('HHmm');
     while (1) {
-        const currentHm = Moment().format('HHmm');
-        if (Number(beginHm) <= Number(currentHm) && Number(currentHm) <= Number(endHm)) {
-            await orderService.handle();
+        try {
+            const currentHm = Moment().format('HHmm');
+            if (Number(beginHm) <= Number(currentHm) && Number(currentHm) <= Number(endHm)) {
+                await orderService.handle();
+            }
+            await sleep(3000);
+        } catch (e) {
+            console.log(e)
         }
-        await sleep(3000);
     }
 }
 bootstrap();
