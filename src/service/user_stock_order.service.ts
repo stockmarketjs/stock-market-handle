@@ -225,7 +225,6 @@ export class UserStockOrderService extends BaseService {
                     stockId,
                     state: ConstData.ORDER_STATE.READY,
                 },
-                attributes: ['id'],
                 transaction,
             });
             await this.userStockOrderDao.bulkUpdate({
