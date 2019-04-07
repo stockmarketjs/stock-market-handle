@@ -31,18 +31,19 @@ export class UserStockOrderService extends BaseService {
         return this.userStockOrderDao.create(params, { transaction });
     }
 
-    public async findAllReadyByStockIdWithLock(
-        stockId: string,
+    public async findAllReadyByIdsWithLock(
+        ids: string[],
         transaction: Transaction,
     ) {
         return this.userStockOrderDao.findAll({
             where: {
-                stockId,
+                id: {
+                    [Op.in]: ids,
+                },
                 state: ConstData.ORDER_STATE.READY,
             },
             transaction,
             lock: Transaction.LOCK.UPDATE,
-            raw: true,
         });
     }
 

@@ -53,27 +53,51 @@ export class OrderService {
             const newTransaction = await this.sequelize.transaction();
 
             try {
-                const readyPool = await this.userStockOrderService.findAllReadyByStockIdWithLock(stock.id, newTransaction);
-                await this.lockReadyPool(readyPool, newTransaction);
+                console.time('获取准备池Ids');
+                const buyShiftIds = await this.stockOrderService.findAllIdsShift(stock.id, ConstData.TRADE_ACTION.BUY, newTransaction);
+                const soldShiftIds = await this.stockOrderService.findAllIdsShift(stock.id, ConstData.TRADE_ACTION.SOLD, newTransaction);
+                const shiftIds = _.union(buyShiftIds, soldShiftIds);
+                console.timeEnd('获取准备池Ids');
 
-                const finalOrders = this.calcOneStockFinalOrders(readyPool);
-                Logger.log(`核算完毕成交单 ${stock.name}`);
+                Logger.log(`${stock.name} 有${shiftIds.length}个待撮合`);
+
+                console.time('锁定准备池');
+                const readyPool = await this.userStockOrderService.findAllReadyByIdsWithLock(shiftIds, newTransaction);
+                await this.lockReadyPool(readyPool, newTransaction);
+                console.timeEnd('锁定准备池');
+
+                console.time('撮合准备池');
+                const finalOrders = this.calcAllStockFinalOrders(readyPool);
+                console.timeEnd('撮合准备池');
+
+                Logger.log(`核算完毕 ${stock.name}, 成交单数量 ${finalOrders.length}`);
+
                 if (finalOrders.length === 0) {
-                    Logger.log('暂无成交');
                     await newTransaction.rollback();
                     continue;
                 }
+
+                console.time('交割');
                 const trade = await this.trade(finalOrders, newTransaction);
+                console.timeEnd('交割');
+
                 Logger.log(`资产交割完毕 ${stock.name}`);
+
                 if (!trade) {
                     Logger.log('暂无交割');
                     await newTransaction.rollback();
                     continue;
                 }
+
+                console.time('行情刷新结束');
                 await this.updateQuotation(trade, newTransaction);
+                console.timeEnd('行情刷新结束');
                 Logger.log(`行情刷新结束 ${stock.name}`);
 
+                console.time('释放准备池');
                 await this.releaseReadyPool(readyPool, newTransaction);
+                console.timeEnd('释放准备池');
+
                 await newTransaction.commit();
             } catch (e) {
                 await newTransaction.rollback();
@@ -224,14 +248,14 @@ export class OrderService {
     }
 
     /**
-     * 计算撮合一只股票的成交数据
+     * 计算撮合股票池的成交数据
      *
      * @param {string} stockId
      * @param {Transaction} [transaction]
      * @returns
      * @memberof OrderService
      */
-    private calcOneStockFinalOrders(
+    private calcAllStockFinalOrders(
         readyPool: UserStockOrder[],
     ): {
         buyOrder: UserStockOrder,
@@ -254,7 +278,6 @@ export class OrderService {
             const finalOrder = this.matchTrade(readyPool, order);
             if (finalOrder != null) finalOrders.push(finalOrder);
         }
-        if (finalOrders.length === 0) Logger.log('没有可以撮合的');
         return finalOrders;
     }
 

@@ -9,7 +9,7 @@ import { StockOrder } from '../entity/sequelize/stock_order.entity';
 import { $ } from '../common/util/function';
 import { UserStockOrderDao } from '../dao/user_stock_order.dao';
 import { ConstData } from '../constant/data.const';
-import { StockOrderFindAllBuyShift, StockOrderFindAllSoldShift } from '../vo/stock_order.vo';
+import { StockOrderFindAllBuyShift, StockOrderFindAllSoldShift, StockOrderFindAllCoreShift } from '../vo/stock_order.vo';
 import { StockService } from './stock.service';
 
 @Injectable()
@@ -23,11 +23,25 @@ export class StockOrderService extends BaseService {
         super();
     }
 
-    private async findAllShift(
+    public async findAllIdsShift(
         stockId: string,
         type: ConstData.TRADE_ACTION,
         transaction?: Transaction,
-    ): Promise<StockOrderFindAllBuyShift[]> {
+    ): Promise<string[]> {
+        const res = await this.findAllShiftCore(
+            stockId, type, transaction,
+        );
+        return _.reduce(res, (sum, value) => {
+            sum = sum.concat(value.ids);
+            return sum;
+        }, [] as string[]);
+    }
+
+    private async findAllShiftCore(
+        stockId: string,
+        type: ConstData.TRADE_ACTION,
+        transaction?: Transaction,
+    ): Promise<StockOrderFindAllCoreShift[]> {
         const userStockOrders = await this.userStockOrderDao.findAll({
             where: {
                 stockId,
@@ -39,7 +53,7 @@ export class StockOrderService extends BaseService {
         const groupOfBuy = _.groupBy(userStockOrders, 'price');
         const keys = _.keys(groupOfBuy);
         const keysSorted = keys.sort((a, b) => Number(a) - Number(b));
-        const res: StockOrderFindAllBuyShift[] = [];
+        const res: StockOrderFindAllCoreShift[] = [];
         // 查看档数, 限定为5档
         const limitShift = 5;
         for (const key of type === ConstData.TRADE_ACTION.BUY ? keysSorted.reverse() : keysSorted) {
@@ -50,9 +64,27 @@ export class StockOrderService extends BaseService {
                 shift: keys.indexOf(key) + 1,
                 price: Number(key),
                 hand: _.sumBy(userStockOrdersOfShift, 'hand'),
+                ids: _.map(userStockOrdersOfShift, 'id'),
             });
         }
         return res;
+    }
+
+    private async findAllShift(
+        stockId: string,
+        type: ConstData.TRADE_ACTION,
+        transaction?: Transaction,
+    ): Promise<StockOrderFindAllBuyShift[]> {
+        const res = await this.findAllShiftCore(
+            stockId, type, transaction,
+        );
+        return res.map(v => {
+            return {
+                hand: v.hand,
+                shift: v.shift,
+                price: v.price,
+            } as StockOrderFindAllBuyShift;
+        });
     }
 
     public async findAllSoldShift(

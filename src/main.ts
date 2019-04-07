@@ -44,7 +44,7 @@ async function bootstrap() {
         if (Number(beginHm) <= Number(currentHm) && Number(currentHm) <= Number(endHm)) {
             await orderService.handle();
         }
-        await sleep(10000);
+        await sleep(3000);
     }
 }
 bootstrap();
