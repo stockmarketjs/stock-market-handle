@@ -11,4 +11,8 @@ export class $ {
         return _.takeRight(source, 1)[0];
     }
 
+    public static cloneDeep(object: any){
+        return JSON.parse(JSON.stringify(object));
+    }
+
 }

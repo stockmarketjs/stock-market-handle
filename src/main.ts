@@ -48,6 +48,7 @@ async function bootstrap() {
             await sleep(3000);
         } catch (e) {
             console.log(e)
+            await sleep(10000);
         }
     }
 }

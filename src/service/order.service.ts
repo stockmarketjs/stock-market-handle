@@ -407,9 +407,10 @@ export class OrderService {
                         finalOrder.soldOrder.id,
                     ].indexOf(pool.id) >= 0;
                 });
+                const source = $.cloneDeep(finalOrder);
                 // 执行交易
                 return {
-                    finalOrder: _.assign(finalOrder, { hand: finalOrder.buyOrder.hand }),
+                    finalOrder: _.assign(source, { hand: source.buyOrder.hand }),
                     partTradeOrders: [
                         {
                             id: finalOrder.buyOrder.id,
@@ -427,7 +428,7 @@ export class OrderService {
                     return pool.id === finalOrder.soldOrder.id;
                 });
                 // 将订单的买方和卖方的手数修改成一致
-                const source = _.cloneDeep(finalOrder);
+                const source = $.cloneDeep(finalOrder);
                 source.buyOrder.hand = finalOrder.soldOrder.hand;
                 // 扣减部分成交的手数
                 const readyPoolItem = _.find(readyPool, pool => {
@@ -456,7 +457,7 @@ export class OrderService {
                     return pool.id === finalOrder.buyOrder.id;
                 });
                 // 将订单的买方和卖方的手数修改成一致
-                const source = _.cloneDeep(finalOrder);
+                const source = $.cloneDeep(finalOrder);
                 source.soldOrder.hand = finalOrder.buyOrder.hand;
                 // 扣减部分成交的手数
                 const readyPoolItem = _.find(readyPool, pool => {
