@@ -29,7 +29,7 @@ export class StockOrderService extends BaseService {
         transaction?: Transaction,
     ): Promise<string[]> {
         const res = await this.findAllShiftCore(
-            stockId, type, transaction,
+            stockId, type, 10, transaction,
         );
         return _.reduce(res, (sum, value) => {
             sum = sum.concat(value.ids);
@@ -40,6 +40,7 @@ export class StockOrderService extends BaseService {
     private async findAllShiftCore(
         stockId: string,
         type: ConstData.TRADE_ACTION,
+        limitShift = 5,
         transaction?: Transaction,
     ): Promise<StockOrderFindAllCoreShift[]> {
         const userStockOrders = await this.userStockOrderDao.findAll({
@@ -54,8 +55,6 @@ export class StockOrderService extends BaseService {
         const keys = _.keys(groupOfBuy);
         const keysSorted = keys.sort((a, b) => Number(a) - Number(b));
         const res: StockOrderFindAllCoreShift[] = [];
-        // 查看档数, 限定为5档
-        const limitShift = 5;
         for (const key of type === ConstData.TRADE_ACTION.BUY ? keysSorted.reverse() : keysSorted) {
             if (keys.indexOf(key) === limitShift) break;
 
@@ -76,7 +75,7 @@ export class StockOrderService extends BaseService {
         transaction?: Transaction,
     ): Promise<StockOrderFindAllBuyShift[]> {
         const res = await this.findAllShiftCore(
-            stockId, type, transaction,
+            stockId, type, 5, transaction,
         );
         return res.map(v => {
             return {
