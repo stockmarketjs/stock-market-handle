@@ -100,7 +100,7 @@ export class CronService extends BaseService {
                         change: stock.change,
                         totalHand: stock.totalHand,
                         startPrice: stock.startPrice,
-                        endPrice: stock.endPrice,
+                        endPrice: stock.currentPrice,
                         highestPrice: stock.highestPrice,
                         lowestPrice: stock.lowestPrice,
                     }, transaction);

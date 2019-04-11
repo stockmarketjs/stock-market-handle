@@ -94,7 +94,6 @@ export class StockService extends BaseService {
                 },
                 transaction,
             });
-        stock.endPrice = stock.currentPrice;
     }
 
     public async updateQuotation(
