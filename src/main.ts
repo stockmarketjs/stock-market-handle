@@ -32,13 +32,15 @@ async function bootstrap() {
     }));
 
     const cronService = app.get(CronService);
-    await cronService.fire()
+    await cronService.fire();
 
     const orderService = app.get(OrderService);
     const begin = Moment(ConstData.TRADE_PERIODS[0].begin, 'HH:mm');
     const end = Moment(ConstData.TRADE_PERIODS[1].end, 'HH:mm');
     const beginHm = Moment(begin).format('HHmm');
     const endHm = Moment(end).format('HHmm');
+    const maxTryCount = 10;
+    let currentTryCount = 0;
     while (1) {
         try {
             const currentHm = Moment().format('HHmm');
@@ -46,9 +48,15 @@ async function bootstrap() {
                 await orderService.handle();
             }
             await sleep(3000);
+            currentTryCount=0;
         } catch (e) {
-            console.log(e)
+            console.log(e);
             await sleep(10000);
+            currentTryCount++;
+            if(currentTryCount>maxTryCount){
+                console.log('超过最大错误次数');
+                process.exit();
+            }
         }
     }
 }
