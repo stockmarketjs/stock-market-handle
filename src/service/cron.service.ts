@@ -44,11 +44,11 @@ export class CronService extends BaseService {
         const begin = Moment(ConstData.TRADE_PERIODS[0].begin, 'HH:mm');
         const end = Moment(ConstData.TRADE_PERIODS[1].end, 'HH:mm');
         const beginMinutes = Moment(begin).format('mm');
-        const beginHours = Moment(begin).format('HH');
+        const beginHours = Moment(begin).format('H');
         const endMinutes = Moment(end).format('mm');
-        const endHours = Moment(end).format('HH');
+        const endHours = Moment(end).format('H');
 
-        const job = new CronJob(`57 * ${beginHours}-${endHours} * * *`, async () => {
+        const job = new CronJob(`57 0 ${beginHours}-${endHours} * * *`, async () => {
             Logger.log('机器人交易开始');
             await this.robotService.dispatchStrategy();
             Logger.log('机器人交易结束');
@@ -58,9 +58,9 @@ export class CronService extends BaseService {
 
     private async fireStartQuotation() {
         const begin = Moment(ConstData.TRADE_PERIODS[0].begin, 'HH:mm').subtract(30, 'minutes');
-        const minutes = Moment(begin).format('mm');
+        const minutes = Moment(begin).format('m');
         const hours = Moment(begin).format('HH');
-        const job = new CronJob(`00 ${minutes} ${hours} * * *`, async () => {
+        const job = new CronJob(`0 ${minutes} ${hours} * * *`, async () => {
             Logger.log('开盘开始');
             const transaction = await this.sequelize.transaction();
             try {
@@ -81,9 +81,9 @@ export class CronService extends BaseService {
     private async fireEndQuotation() {
         const currentDate = Moment().format('YYYY-MM-DD');
         const end = Moment(ConstData.TRADE_PERIODS[1].end, 'HH:mm').add(10, 'minutes');
-        const minutes = Moment(end).format('mm');
-        const hours = Moment(end).format('HH');
-        const job = new CronJob(`00 ${minutes} ${hours} * * *`, async () => {
+        const minutes = Moment(end).format('m');
+        const hours = Moment(end).format('H');
+        const job = new CronJob(`0 ${minutes} ${hours} * * *`, async () => {
             Logger.log('收盘开始');
             const transaction = await this.sequelize.transaction();
             try {
