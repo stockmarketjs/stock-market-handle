@@ -48,7 +48,7 @@ export class CronService extends BaseService {
         const endMinutes = Moment(end).format('mm');
         const endHours = Moment(end).format('H');
 
-        const job = new CronJob(`57 0 ${beginHours}-${endHours} * * *`, async () => {
+        const job = new CronJob(`57 * ${beginHours}-${endHours} * * *`, async () => {
             Logger.log('机器人交易开始');
             await this.robotService.dispatchStrategy();
             Logger.log('机器人交易结束');
