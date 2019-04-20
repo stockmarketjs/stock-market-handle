@@ -9,6 +9,7 @@ import {
 import { OrderService } from './service/order.service';
 import { Moment } from './common/util/moment';
 import { ConstData } from './constant/data.const';
+import { ConfigServiceStatic } from './provider/config/config.service';
 
 async function bootstrap() {
     const app = await NestFactory.create<NestFastifyApplication>(
@@ -28,6 +29,8 @@ async function bootstrap() {
             value: false,
         },
     }));
+
+    await app.listen(ConfigServiceStatic.port);
 
     const orderService = app.get(OrderService);
     const begin = Moment(ConstData.TRADE_PERIODS[0].begin, 'HH:mm');
