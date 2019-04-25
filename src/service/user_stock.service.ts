@@ -179,13 +179,19 @@ export class UserStockService extends BaseService {
             // 减法
             userStock.costPrice;
 
-        return this.userStockDao.update({
+        const boolean = await this.userStockDao.update({
             amount: userStock.amount + value,
             costPrice: avgCostPrice,
         }, {
-                where: { id: userStock.id },
+                where: {
+                    id: userStock.id,
+                    amount: {
+                        [Op.gte]: -value,
+                    },
+                },
                 transaction,
             });
+        if (!boolean) throw new Error('没有对应的股票账户冻结股数不足');
     }
 
     /**
@@ -231,13 +237,19 @@ export class UserStockService extends BaseService {
             transaction,
         });
         if (!userStock) throw new BadRequestException('没有足额的股票');
-        return this.userStockDao.update({
+        const boolean = await this.userStockDao.update({
             frozenAmount: userStock.frozenAmount - value,
             amount: userStock.amount + value,
         }, {
-                where: { id: userStock.id },
+                where: {
+                    id: userStock.id,
+                    frozenAmount: {
+                        [Op.gte]: value,
+                    },
+                },
                 transaction,
             });
+        if (!boolean) throw new Error('没有对应的股票账户冻结股数不足');
     }
 
 }

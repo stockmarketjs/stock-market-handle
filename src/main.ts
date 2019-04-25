@@ -45,13 +45,13 @@ async function bootstrap() {
             if (Number(beginHm) <= Number(currentHm) && Number(currentHm) <= Number(endHm)) {
                 await orderService.handle();
             }
-            await sleep(5000);
-            currentTryCount=0;
+            currentTryCount = 0;
+            await sleep(500);
         } catch (e) {
             console.log(e);
             currentTryCount++;
-            await sleep(currentTryCount * 10000);
-            if(currentTryCount>maxTryCount){
+            await sleep(currentTryCount * 2000);
+            if (currentTryCount > maxTryCount) {
                 console.log('超过最大错误次数');
                 process.exit();
             }

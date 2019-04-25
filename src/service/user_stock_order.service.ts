@@ -109,6 +109,25 @@ export class UserStockOrderService extends BaseService {
             });
     }
 
+    public async bulkUpdateStateByIds(
+        ids: string[],
+        sourceState: ConstData.ORDER_STATE,
+        targetState: ConstData.ORDER_STATE,
+        transaction?: Transaction,
+    ) {
+        return this.userStockOrderDao.bulkUpdate({
+            state: targetState,
+        }, {
+                where: {
+                    state: sourceState,
+                    id: {
+                        [Op.in]: ids,
+                    },
+                },
+                transaction,
+            });
+    }
+
     public async bulkUpdateByIds(
         ids: string[],
         params: UserStockOrderUpdateBodyDto,

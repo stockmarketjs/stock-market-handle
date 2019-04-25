@@ -135,12 +135,18 @@ export class UserCapitalService extends BaseService {
             transaction,
         });
         if (!userCapital) throw new BadRequestException('没有对应的资金账户');
-        return this.userCapitalDao.update({
+        const boolean = await this.userCapitalDao.update({
             cash: userCapital.cash + value,
         }, {
-                where: { id: userCapital.id },
+                where: {
+                    id: userCapital.id,
+                    cash: {
+                        [Op.gte]: -value,
+                    },
+                },
                 transaction,
             });
+        if (!boolean) throw new Error('没有对应的资金账户冻结余额不足');
     }
 
     /**
@@ -194,13 +200,19 @@ export class UserCapitalService extends BaseService {
             transaction,
         });
         if (!userCapital) throw new BadRequestException('没有对应的资金账户');
-        return this.userCapitalDao.update({
+        const boolean = await this.userCapitalDao.update({
             frozenCash: userCapital.frozenCash - value,
             cash: userCapital.cash + value,
         }, {
-                where: { id: userCapital.id },
+                where: {
+                    id: userCapital.id,
+                    frozenCash: {
+                        [Op.gte]: value,
+                    },
+                },
                 transaction,
             });
+        if (!boolean) throw new Error('没有对应的资金账户冻结余额不足');
     }
 
     public async findAllOrderCash(

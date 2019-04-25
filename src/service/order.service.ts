@@ -13,8 +13,6 @@ import { ConstData } from '../constant/data.const';
 import { Calc } from '../common/util/calc';
 import { Moment } from '../common/util/moment';
 import { $ } from '../common/util/function';
-import { UserStock } from '../entity/sequelize/user_stock.entity';
-import { UserCapital } from '../entity/sequelize/user_capital.entity';
 
 @Injectable()
 export class OrderService {
@@ -32,18 +30,24 @@ export class OrderService {
         readyPool: UserStockOrder[],
         transaction: Transaction,
     ) {
-        await this.userStockOrderService.bulkUpdateByIds(readyPool.map(v => v.id), {
-            state: ConstData.ORDER_STATE.TRADEING,
-        }, transaction);
+        await this.userStockOrderService.bulkUpdateStateByIds(
+            readyPool.map(v => v.id),
+            ConstData.ORDER_STATE.READY,
+            ConstData.ORDER_STATE.TRADEING,
+            transaction,
+        );
     }
 
     public async releaseReadyPool(
         readyPool: UserStockOrder[],
         transaction: Transaction,
     ) {
-        await this.userStockOrderService.bulkUpdateByIds(readyPool.map(v => v.id), {
-            state: ConstData.ORDER_STATE.READY,
-        }, transaction);
+        await this.userStockOrderService.bulkUpdateStateByIds(
+            readyPool.map(v => v.id),
+            ConstData.ORDER_STATE.TRADEING,
+            ConstData.ORDER_STATE.READY,
+            transaction,
+        );
     }
 
     public async handle() {
@@ -119,10 +123,10 @@ export class OrderService {
         }[],
         transaction: Transaction,
     ) {
-        const tasks: {
-            id: string,
-            hand: number,
-        }[] = [];
+        // const tasks: {
+        //     id: string,
+        //     hand: number,
+        // }[] = [];
         const all = _.reduce(orders, (sum, item) => {
             sum = sum.concat(item.partTradeOrders);
             return sum;
@@ -130,19 +134,26 @@ export class OrderService {
             id: string,
             hand: number,
         }[]);
-        const groupAll = _.groupBy(all, 'id');
-        for (const id in groupAll) {
-            const sortItem = _.sortBy(groupAll[id], 'hand');
-            const item = _.first(sortItem);
-            if (item) tasks.push(item);
-        }
+        // const groupAll = _.groupBy(all, 'id');
+        // for (const id in groupAll) {
+        //     const sortItem = _.sortBy(groupAll[id], 'hand');
+        //     const item = _.first(sortItem);
+        //     if (item) tasks.push(item);
+        // }
 
-        const tasks0 = _.filter(tasks, { hand: 0 });
-        const tasksNot0 = _.reject(tasks, { hand: 0 });
+        const tasks0 = _.filter(all, { hand: 0 });
+        const tasksNot0 = _.reject(all, { hand: 0 });
 
         await this.userStockOrderService.bulkUpdateTradeHandByIds(
             _.map(tasks0, 'id'),
             0,
+            transaction,
+        );
+        await this.userStockOrderService.bulkUpdateByIds(
+            _.map(tasks0, 'id'),
+            {
+                state: ConstData.ORDER_STATE.SUCCESS,
+            },
             transaction,
         );
         for (const task of tasksNot0) {
@@ -285,30 +296,25 @@ export class OrderService {
                 finalOrder.price,
                 transaction,
             );
-
-            // 改变订单状态
-            await this.userStockOrderService.bulkUpdateByIds([
-                finalOrder.buyOrder.id,
-                finalOrder.soldOrder.id,
-            ], {
-                    state: ConstData.ORDER_STATE.SUCCESS,
-                }, transaction);
-
-            // 写入成交的交易记录
-            await this.stockOrderService.create({
-                stockId: finalOrder.buyOrder.stockId,
-                price: finalOrder.price,
-                minute: Moment().format('HH:mm'),
-                hand: finalOrder.hand,
-                date: Moment().format('YYYY-MM-DD'),
-            });
         }
 
-        return $.tail(finalOrders) ? {
-            stockId: $.tail(finalOrders).buyOrder.stockId,
-            price: $.tail(finalOrders).price,
-            hand: $.tail(finalOrders).hand,
+        const latestOrder = _.first(finalOrders);
+        const res = latestOrder ? {
+            stockId: latestOrder.buyOrder.stockId,
+            price: latestOrder.price,
+            hand: latestOrder.hand,
         } : null;
+
+        // 写入成交的交易记录
+        if (res) await this.stockOrderService.create({
+            stockId: res.stockId,
+            price: res.price,
+            minute: Moment().format('HH:mm'),
+            hand: res.hand,
+            date: Moment().format('YYYY-MM-DD'),
+        });
+
+        return res;
     }
 
     /**
@@ -346,12 +352,12 @@ export class OrderService {
             }[],
         }[] = [];
 
-        // 获取限价池
-        const limitReadyPools = _.filter(readyPool, { mode: ConstData.TRADE_MODE.LIMIT });
         // 获取最新订单们
-        const orders = _.orderBy(limitReadyPools, 'createdAt', 'desc');
-        for (const order of orders) {
-            const finalOrder = this.matchTrade(readyPool, order);
+        const orders = _.orderBy(readyPool, 'createdAt', 'desc');
+        while (orders.length > 0) {
+            const order = orders.shift();
+            if (!order) break;
+            const finalOrder = this.matchTrade(orders, order);
             if (!finalOrder) continue;
             finalOrders.push(finalOrder);
         }
@@ -368,7 +374,7 @@ export class OrderService {
      */
     private matchTrade(
         readyPool: UserStockOrder[],
-        currentOrder: UserStockOrder,
+        latestOrder: UserStockOrder,
     ): {
         finalOrder: {
             buyOrder: UserStockOrder,
@@ -381,21 +387,16 @@ export class OrderService {
             hand: number,
         }[],
     } | null {
-        // 获取限价买单池 较高价格优先 时间优先
-        const buyOrders = _(readyPool).filter({ type: ConstData.TRADE_ACTION.BUY })
-            .orderBy(['price', 'createdAt'], ['desc', 'asc']).value();
-        // 获取限价卖单池 较低价格优先 时间优先
-        const soldOrders = _(readyPool).filter({ type: ConstData.TRADE_ACTION.SOLD })
-            .orderBy(['price', 'createdAt'], ['asc', 'asc']).value();
-
         // 最高买入订单
-        const highestBuyOrder = _.first(buyOrders);
+        // 获取限价买单池 较高价格优先 时间优先
+        const highestBuyOrder = _(readyPool).filter({ type: ConstData.TRADE_ACTION.BUY })
+            .orderBy(['price', 'createdAt'], ['desc', 'asc']).first();
         // 最低卖出订单
-        const lowestSoldOrder = _.first(soldOrders);
-        // 没有买单卖单, 无法交易
-        if (!highestBuyOrder || !lowestSoldOrder) return null;
+        // 获取限价卖单池 较低价格优先 时间优先
+        const lowestSoldOrder = _(readyPool).filter({ type: ConstData.TRADE_ACTION.SOLD })
+            .orderBy(['price', 'createdAt'], ['asc', 'asc']).first();
 
-        const finalOrder = this.calcFinalPrice(highestBuyOrder, lowestSoldOrder, currentOrder);
+        const finalOrder = this.calcFinalPrice(latestOrder, highestBuyOrder, lowestSoldOrder);
         if (!finalOrder) {
             return null;
         } else {
@@ -501,44 +502,30 @@ export class OrderService {
      * @memberof OrderService
      */
     private calcFinalPrice(
-        highestBuyOrder: UserStockOrder,
-        lowestSoldOrder: UserStockOrder,
-        currentOrder: UserStockOrder,
+        latestOrder: UserStockOrder,
+        highestBuyOrder?: UserStockOrder,
+        lowestSoldOrder?: UserStockOrder,
     ): {
         buyOrder: UserStockOrder,
         soldOrder: UserStockOrder,
         price: number,
     } | null {
-
-        // 最高买入价格 与 最低卖出价格 相同, 则立即成交
-        if (highestBuyOrder && lowestSoldOrder &&
-            highestBuyOrder.price === lowestSoldOrder.price) {
+        if (latestOrder.type === ConstData.TRADE_ACTION.SOLD && highestBuyOrder) {
+            // 主卖, 则以最高买入价格成交
             return {
                 buyOrder: highestBuyOrder,
-                soldOrder: lowestSoldOrder,
+                soldOrder: latestOrder,
                 price: highestBuyOrder.price,
             };
-        }
-        // 申报价格买入 > 最低卖出价格, 则以最低卖出价格成交
-        else if (lowestSoldOrder && currentOrder.type === ConstData.TRADE_ACTION.BUY &&
-            currentOrder.price > lowestSoldOrder.price) {
+        } else if (latestOrder.type === ConstData.TRADE_ACTION.BUY && lowestSoldOrder) {
+            // 主买, 则以最低卖出价格成交
             return {
-                buyOrder: currentOrder,
+                buyOrder: latestOrder,
                 soldOrder: lowestSoldOrder,
                 price: lowestSoldOrder.price,
             };
-        }
-        // 申报价格卖出 < 最高买入价格, 则以最高买入价格成交
-        else if (highestBuyOrder && currentOrder.type === ConstData.TRADE_ACTION.SOLD &&
-            currentOrder.price < highestBuyOrder.price) {
-            return {
-                buyOrder: highestBuyOrder,
-                soldOrder: currentOrder,
-                price: highestBuyOrder.price,
-            };
-        }
-        // 撮合失败
-        else {
+        } else {
+            // 撮合失败
             return null;
         }
     }
