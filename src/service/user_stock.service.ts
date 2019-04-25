@@ -228,6 +228,7 @@ export class UserStockService extends BaseService {
         stockId: string,
         value: number,
         transaction?: Transaction,
+        finalOrder?: any,
     ) {
         const userStock = await this.userStockDao.findOne({
             where: {
@@ -237,6 +238,7 @@ export class UserStockService extends BaseService {
             transaction,
         });
         if (!userStock) throw new BadRequestException('没有足额的股票');
+
         const boolean = await this.userStockDao.update({
             frozenAmount: userStock.frozenAmount - value,
             amount: userStock.amount + value,
@@ -249,6 +251,16 @@ export class UserStockService extends BaseService {
                 },
                 transaction,
             });
+        if (!boolean) console.log(
+            {
+                finalOrder,
+                'id': userStock.id,
+                'userStock.frozenAmount': userStock.frozenAmount,
+                value,
+                'frozenAmount': userStock.frozenAmount - value,
+                'amount': userStock.amount + value,
+            },
+        );
         if (!boolean) throw new Error('没有对应的股票账户冻结股数不足');
     }
 

@@ -46,7 +46,6 @@ async function bootstrap() {
                 await orderService.handle();
             }
             currentTryCount = 0;
-            await sleep(500);
         } catch (e) {
             console.log(e);
             currentTryCount++;

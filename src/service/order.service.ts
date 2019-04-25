@@ -123,10 +123,10 @@ export class OrderService {
         }[],
         transaction: Transaction,
     ) {
-        // const tasks: {
-        //     id: string,
-        //     hand: number,
-        // }[] = [];
+        const tasks: {
+            id: string,
+            hand: number,
+        }[] = [];
         const all = _.reduce(orders, (sum, item) => {
             sum = sum.concat(item.partTradeOrders);
             return sum;
@@ -134,15 +134,17 @@ export class OrderService {
             id: string,
             hand: number,
         }[]);
-        // const groupAll = _.groupBy(all, 'id');
-        // for (const id in groupAll) {
-        //     const sortItem = _.sortBy(groupAll[id], 'hand');
-        //     const item = _.first(sortItem);
-        //     if (item) tasks.push(item);
-        // }
+        // 因为 partTradeOrders 是部分成交的日志
+        // 一个订单经过多次匹配，hand最小的才是最后的结果
+        const groupAll = _.groupBy(all, 'id');
+        for (const id in groupAll) {
+            const sortItem = _.sortBy(groupAll[id], 'hand');
+            const item = _.first(sortItem);
+            if (item) tasks.push(item);
+        }
 
-        const tasks0 = _.filter(all, { hand: 0 });
-        const tasksNot0 = _.reject(all, { hand: 0 });
+        const tasks0 = _.filter(tasks, { hand: 0 });
+        const tasksNot0 = _.reject(tasks, { hand: 0 });
 
         await this.userStockOrderService.bulkUpdateTradeHandByIds(
             _.map(tasks0, 'id'),
@@ -252,6 +254,8 @@ export class OrderService {
             transaction,
         );
 
+        console.log(finalOrders)
+
         for (const finalOrder of finalOrders) {
             const payOfBuyer = Calc.calcStockBuyCost(finalOrder.buyOrder.hand, finalOrder.price);
 
@@ -287,6 +291,7 @@ export class OrderService {
                 finalOrder.soldOrder.stockId,
                 finalOrder.hand * 100,
                 transaction,
+                finalOrder,
             );
             // 扣减卖方股票
             await this.userStockService.subtractUserStock(
@@ -354,11 +359,12 @@ export class OrderService {
 
         // 获取最新订单们
         const orders = _.orderBy(readyPool, 'createdAt', 'desc');
-        while (orders.length > 0) {
-            const order = orders.shift();
-            if (!order) break;
+        for(const order of orders){
             const finalOrder = this.matchTrade(orders, order);
             if (!finalOrder) continue;
+            console.log(finalOrder.finalOrder.buyOrder)
+            console.log(finalOrder.finalOrder.soldOrder)
+            console.log(finalOrder.partTradeOrders)
             finalOrders.push(finalOrder);
         }
         return finalOrders;
@@ -400,6 +406,7 @@ export class OrderService {
         if (!finalOrder) {
             return null;
         } else {
+            console.log(finalOrder.buyOrder.hand,finalOrder.soldOrder.hand);
             if (finalOrder.buyOrder.hand === finalOrder.soldOrder.hand) {
                 // 移除已经成交的订单
                 _.remove(readyPool, pool => {
@@ -431,10 +438,10 @@ export class OrderService {
                 // 将订单的买方和卖方的手数修改成一致
                 const source = $.cloneDeep(finalOrder);
                 source.buyOrder.hand = finalOrder.soldOrder.hand;
-                // 扣减部分成交的手数
                 const readyPoolItem = _.find(readyPool, pool => {
                     return pool.id === finalOrder.buyOrder.id;
                 });
+                // 扣减部分成交的手数
                 if (readyPoolItem) readyPoolItem.hand -= finalOrder.soldOrder.hand;
                 const partTradeOrders: {
                     id: string,
