@@ -510,14 +510,16 @@ export class OrderService {
         soldOrder: UserStockOrder,
         price: number,
     } | null {
-        if (latestOrder.type === ConstData.TRADE_ACTION.SOLD && highestBuyOrder) {
+        if (latestOrder.type === ConstData.TRADE_ACTION.SOLD && highestBuyOrder &&
+            latestOrder.price <= highestBuyOrder.price) {
             // 主卖, 则以最高买入价格成交
             return {
                 buyOrder: highestBuyOrder,
                 soldOrder: latestOrder,
                 price: highestBuyOrder.price,
             };
-        } else if (latestOrder.type === ConstData.TRADE_ACTION.BUY && lowestSoldOrder) {
+        } else if (latestOrder.type === ConstData.TRADE_ACTION.BUY && lowestSoldOrder &&
+            latestOrder.price >= lowestSoldOrder.price) {
             // 主买, 则以最低卖出价格成交
             return {
                 buyOrder: latestOrder,
